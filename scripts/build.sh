@@ -22,7 +22,7 @@ set -e
 # --- Configuration ---
 BUILD_TYPE="Release"
 CLEAN_BUILD=false
-CHECK_COVERAGE=false
+BUILD_COVERAGE=false
 
 # Parse args
 for arg in "$@"; do
@@ -31,7 +31,7 @@ for arg in "$@"; do
       CLEAN_BUILD=true
       ;;
     --coverage)
-      CHECK_COVERAGE=true
+      BUILD_COVERAGE=true
       ;;
     [Dd]ebug)
       BUILD_TYPE="Debug"
@@ -52,7 +52,7 @@ echo "Build Type:           $BUILD_TYPE"
 echo "Installation Prefix:  $INSTALL_PREFIX"
 echo "Repository Root:      $REPO_ROOT"
 echo "Clean Build:          $CLEAN_BUILD"
-echo "Check Coverage        $CHECK_COVERAGE"
+echo "Check Coverage        $BUILD_COVERAGE"
 echo "================================================="
 
 # --- Clean step ---
@@ -74,7 +74,7 @@ LIB_BUILD_DIR="$REPO_ROOT/build"
 mkdir -p "$LIB_BUILD_DIR"
 cd "$LIB_BUILD_DIR"
 
-cmake .. -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" -DCHECK_COVERAGE="$CHECK_COVERAGE" -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+cmake .. -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" -DBUILD_COVERAGE="$BUILD_COVERAGE" -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
 make -j$(nproc)
 make install

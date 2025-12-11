@@ -275,9 +275,6 @@ typename Types<T>::StateEstEcef
 Navigation<T>::lcUpdateKFPosEcef (const PosMeasEcef & pos_meas, 
                                 const StateEstEcef & state_est_prior,
                                 const T & p_value) {
-
-    // A priori error state is always zero in closed loop filter
-    Eigen::Matrix<T,15,1> x_est_propagated = Eigen::Matrix<T,15,1>::Zero();
         
     // Set-up measurement matrix using (14.115)
     Eigen::Matrix<T,3,15> H_matrix = Eigen::Matrix<T,3,15>::Zero();
@@ -517,12 +514,9 @@ Navigation<T>::tcUpdateKFGnssEcef (const GnssMeasurements & gnss_meas,
 
 template<typename T>
 typename Types<T>::StateEstEcef 
-Navigation<T>::lcUpdateKFPosRotEcef (const PosRotMeasEcef & pos_rot_meas, 
+Navigation<T>::lcUpdateKFPosRotEcef(const PosRotMeasEcef & pos_rot_meas, 
                                     const StateEstEcef & state_est_prior,
                                     const T & p_value) {
-
-    // A priori error state is always zero in closed loop filter
-    Eigen::Matrix<T,15,1> x_est_propagated = Eigen::Matrix<T,15,1>::Zero();
         
     // Set-up measurement matrix using (14.115)
     Eigen::Matrix<T,6,15> H_matrix = Eigen::Matrix<T,6,15>::Zero();
@@ -576,6 +570,281 @@ Navigation<T>::lcUpdateKFPosRotEcef (const PosRotMeasEcef & pos_rot_meas,
 
     return state_est_post;
 
+}
+
+
+template<typename T>
+typename Types<T>::StateEstEcef 
+Navigation<T>::lcUpdateKFOptFlow(const cv::Mat & img_0,
+                                const cv::Mat & img_1,
+                                const Matrix3 & K,
+                                const Matrix3 & C_c_b,
+                                const StateEstEcef & state_est_prior,
+                                const T & p_value) {
+
+    cv::Mat K_cv;
+    cv::eigen2cv(K, K_cv);
+    
+    StateEstEcef state_est_post = state_est_prior;
+
+    // Validate input
+    if(img_0.empty() || img_1.empty() || img_0.size() != img_1.size() || img_0.type() != img_1.type()) {
+        state_est_post.valid = false;
+        return state_est_post;
+    }
+
+    // Convert to grayscale
+    cv::Mat gray_0, gray_1;
+    if (img_0.channels() == 1) {
+        gray_0 = img_0;
+        gray_1 = img_1;
+    } else {
+        cv::cvtColor(img_0, gray_0, cv::COLOR_BGR2GRAY);
+        cv::cvtColor(img_1, gray_1, cv::COLOR_BGR2GRAY);
+    }
+
+    // Detect keypoints in the first image
+    std::vector<cv::Point2f> points0;
+    cv::goodFeaturesToTrack(gray_0, points0, 500, 0.01, 10);
+
+    // If not enough points, return
+    if(points0.size() < 8) {
+        LOG(WARNING) << "OPF update failed: not enough goodFeaturesToTrack";
+        state_est_post.valid = false;
+        return state_est_post;
+    }
+
+    // Track keypoints using optical flow
+    std::vector<cv::Point2f> points1;
+    std::vector<unsigned char> status;
+    std::vector<float> err;
+    cv::calcOpticalFlowPyrLK(gray_0, gray_1, points0, points1, status, err);
+
+    // Filter valid tracked points
+    std::vector<cv::Point2f> inlier_pts0, inlier_pts1;
+    inlier_pts0.reserve(points0.size());
+    inlier_pts1.reserve(points1.size());
+    for (size_t i = 0; i < status.size(); ++i) {
+        if (status[i]) {
+            inlier_pts0.push_back(points0[i]);
+            inlier_pts1.push_back(points1[i]);
+        }
+    }
+
+    // If not enough inliers, return not valid
+    if (inlier_pts0.size() < 8) {
+        LOG(WARNING) << "OPF update failed: not enough calcOpticalFlowPyrLK inliers";
+        state_est_post.valid = false;
+        return state_est_post;
+    }
+
+
+    // Estimate Essential matrix: p1 * K^-T * E * K^-1 * p0 = 0
+    cv::Mat mask;  // inliers
+    cv::Mat E_cv = cv::findEssentialMat(inlier_pts0,
+                                        inlier_pts1,
+                                        K_cv,
+                                        cv::USAC_MAGSAC,
+                                        0.99,          // confidence
+                                        1.0,            // epipolar threshold
+                                        mask);
+
+    if (E_cv.empty()) {
+        LOG(WARNING) << "OPF update failed: not enough findEssentialMat inliers";
+        state_est_post.valid = false;
+        return state_est_post;
+    }
+
+    // Decompose into R_0_1 and t_10_1
+    cv::Mat R_cv, t_cv;
+    int inliers = cv::recoverPose(E_cv,
+                                inlier_pts0,
+                                inlier_pts1,
+                                K_cv,
+                                R_cv,
+                                t_cv,
+                                cv::USAC_MAGSAC,
+                                mask);
+
+    if (inliers < 8) {
+        LOG(WARNING) << "OPF update failed: not enough recoverPose inliers";
+        state_est_post.valid = false;
+        return state_est_post;
+    }
+
+    // ========== Project and display the translation vector ==========
+    // t_cv is the translation direction (up to scale) expressed in the first camera frame.
+    // We project a point along this direction into the first image and draw an arrow from
+    // the principal point to the projected point for debugging/visualization.
+    try {
+    // Ensure double precision for projection math
+    cv::Mat t_cam, Kd;
+    t_cv.convertTo(t_cam, CV_64F);
+    K_cv.convertTo(Kd, CV_64F);
+
+    // principal point (cx, cy)
+    double cx = Kd.at<double>(0,2);
+    double cy = Kd.at<double>(1,2);
+    cv::Point2d pp(cx, cy);
+
+    // Choose a scale along the translation direction so the projected point falls inside the image
+    // A heuristic scale: some multiple of the focal length (so it's visible). If depth is negative,
+    // flip sign so the arrow points into the scene.
+    double focal = 0.5 * (Kd.at<double>(0,0) + Kd.at<double>(1,1));
+    double scale = focal * 5.0; // 5 focal lengths out
+
+    // If t points away (z < 0), flip to point forward
+    double tz = t_cam.at<double>(2,0);
+    if (tz < 0) {
+    t_cam = -t_cam;
+    tz = -tz;
+    }
+
+    cv::Mat P = t_cam * scale; // 3x1 point in camera frame
+    cv::Mat ph = Kd * P; // projected homogeneous
+
+    if (std::abs(ph.at<double>(2,0)) > 1e-8) {
+    cv::Point2d proj_pt(ph.at<double>(0,0) / ph.at<double>(2,0), 
+                        ph.at<double>(1,0) / ph.at<double>(2,0));
+
+    // Draw on a copy of the image
+    cv::Mat img_arrow = img_1.clone();
+    // If grayscale, convert to color for visualization
+    if (img_arrow.channels() == 1) cv::cvtColor(img_arrow, img_arrow, cv::COLOR_GRAY2BGR);
+
+    // Draw principal point
+    cv::circle(img_arrow, pp, 3, cv::Scalar(255,0,0), -1);
+    // Draw arrow from principal point to projected point
+    cv::arrowedLine(img_arrow, pp, proj_pt, cv::Scalar(0,0,255), 2, cv::LINE_AA, 0, 0.15);
+
+    cv::imshow("TranslationVector", img_arrow);
+    cv::waitKey(1);
+    }
+    } catch (const std::exception &e) {
+    LOG(WARNING) << "Failed to draw translation vector: " << e.what();
+    } catch (...) {
+    LOG(WARNING) << "Failed to draw translation vector: unknown error";
+    }
+
+    // ========== Plot inlier matches for debugging ========== 
+
+    cv::Mat img_matches;
+    std::vector<cv::KeyPoint> kp0, kp1;
+    cv::KeyPoint::convert(inlier_pts0, kp0);
+    cv::KeyPoint::convert(inlier_pts1, kp1);
+    std::vector<cv::DMatch> matches;
+    for (int i = 0; i < inlier_pts0.size(); ++i) {
+        if (mask.at<unsigned char>(i)) {
+            matches.push_back(cv::DMatch(i, i, 0));
+        }
+    }
+    cv::drawMatches(img_0, kp0,
+                    img_1, kp1,
+                    matches,
+                    img_matches,
+                    cv::Scalar(0, 255, 0), // matchColor
+                    cv::Scalar::all(-1),   // singlePointColor
+                    std::vector<char>(),   // matchesMask
+                    cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+    cv::imshow("Matches", img_matches);
+    cv::waitKey(1);
+
+    // ====================================================
+
+    // Convert to Eigen
+    Matrix3 R;
+    cv::cv2eigen(R_cv, R);
+    Vector3 t;
+    cv::cv2eigen(t_cv, t);
+    Matrix3 E;
+    cv::cv2eigen(E_cv, E);
+
+    // Fundamental matrix
+    Matrix3 F = K.transpose().inverse() * E * K.inverse();
+
+    // Extract and normalize translation vector
+    Vector3 vel_meas_opf = t.normalized();
+
+    // It's in camera frame: rotate to body
+    vel_meas_opf = C_c_b * vel_meas_opf;
+    // Then rotate to ecef
+    vel_meas_opf = state_est_prior.nav_sol.C_b_e * vel_meas_opf;
+
+    // Set-up measurement matrix: jacobian of normalized velocity vector v / ||v|| w.r.t. state
+    Eigen::Matrix<T,3,15> H_matrix = Eigen::Matrix<T,3,15>::Zero();
+    Vector3 vel_est = state_est_prior.nav_sol.v_eb_e;
+    T vel_est_norm = vel_est.norm();
+    H_matrix.template block<3,3>(0,3) = - 1 / vel_est_norm * 
+                                        (Eigen::Matrix<T,3,3>::Identity() + 
+                                        1 / pow(vel_est_norm,2) * (vel_est * vel_est.transpose()));
+    
+    // Set-up measurement noise covariance matrix: compute from epipolar residuals
+    // R = J * J' * cov(epipolar_residuals) --> sum for each residual
+
+    // Compute epipolar residuals sigma
+    const size_t m = inlier_pts0.size();
+    Eigen::ArrayXd epipolar_residuals(m);
+    for (size_t i = 0; i < m; ++i) {
+        Vector3 x0 = Vector3(inlier_pts0[i].x, inlier_pts0[i].y, 1);
+        Vector3 x1 = Vector3(inlier_pts1[i].x, inlier_pts1[i].y, 1);
+        T epipolar_residual = x0.transpose() * F * x1;
+        epipolar_residuals(i) = epipolar_residual;
+    }
+
+    // Suppose zero-mean
+    // T epipolar_residuals_std = std::sqrt(epipolar_residuals.square().sum()/(epipolar_residuals.size()-1));
+    T epipolar_residuals_std = 50;
+
+    // Compute measurement noise covariance matrix
+    Eigen::Matrix<T, 3, 3> R_matrix;
+    for (size_t i = 0; i < m; ++i) {
+        // Jacobian of i-th epipolar residual (1D) w.r.t. translation vector (3D): It's a 1x3 vec
+        Vector3 x0 = Vector3(inlier_pts1[i].x, inlier_pts1[i].y, 1);
+        Vector3 x1 = K.colPivHouseholderQr().solve(x0);
+        Eigen::Matrix<T, 1, 3> J_r_t = (skewSymmetric(x1) * R * x0).transpose();
+        R_matrix += (J_r_t.transpose() * J_r_t);
+    }
+
+    // Invert and mult with residual variance
+    R_matrix = R_matrix.template selfadjointView<Eigen::Upper>().llt().solve(Eigen::Matrix<T, 3, 3>::Identity()) * pow(epipolar_residuals_std, 2);
+
+    // Formulate measurement innovations
+    Eigen::Matrix<T,3,1> delta_z = vel_meas_opf - vel_est.normalized();
+
+    // Perform error-state Kalman filter update
+    Eigen::Matrix<T, 3, 3> S_matrix;
+    Eigen::Matrix<T, 15, 1> x_est_new;
+    Eigen::Matrix<T, 15, 15> P_matrix_post;
+    bool valid_update = updateKF<15, 3>(delta_z,
+                                        state_est_prior.P_matrix.template block<15,15>(0,0),
+                                        H_matrix,
+                                        R_matrix,
+                                        p_value,
+                                        S_matrix,
+                                        x_est_new,
+                                        P_matrix_post);
+
+    // Correct attitude, velocity, and position using (14.7-9)
+    state_est_post.valid = valid_update;
+    state_est_post.nav_sol.time = state_est_prior.nav_sol.time;
+    state_est_post.nav_sol.C_b_e = (Matrix3::Identity() - 
+                                skewSymmetric(Vector3(x_est_new.template block<3,1>(0,0)))) * 
+                                state_est_prior.nav_sol.C_b_e;
+    state_est_post.nav_sol.v_eb_e = state_est_prior.nav_sol.v_eb_e - x_est_new.template block<3,1>(3,0);
+    state_est_post.nav_sol.r_eb_e = state_est_prior.nav_sol.r_eb_e - x_est_new.template block<3,1>(6,0);
+    state_est_post.P_matrix.template block<15,15>(0,0) = P_matrix_post;
+    
+    // Update IMU bias estimates
+    state_est_post.acc_bias = state_est_prior.acc_bias + x_est_new.template block<3,1>(9,0);
+    state_est_post.gyro_bias = state_est_prior.gyro_bias + x_est_new.template block<3,1>(12,0);
+
+    // Update innovations and sigmas
+    state_est_post.innovations_sigmas.clear();
+    for(int i=0; i<delta_z.rows(); i++){
+        state_est_post.innovations_sigmas.push_back(std::make_pair(delta_z(i), sqrt(S_matrix(i,i))));
+    }
+
+    return state_est_post;
 }
 
 template<typename T>

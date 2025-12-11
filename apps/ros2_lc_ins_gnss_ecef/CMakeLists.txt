@@ -16,6 +16,8 @@ else()
   add_compile_options(-O3) # Optimize
 endif()
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
 # ROS2 dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -29,7 +31,15 @@ find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 
 find_package(Eigen3 REQUIRED)
+find_package(OpenCV 4 REQUIRED)
 find_package(glog REQUIRED)
+
+find_package(OsgEarth)
+set(OpenGL_GL_PREFERENCE LEGACY)
+find_package(OpenGL REQUIRED)
+find_package(EGL REQUIRED)
+find_package(OSG REQUIRED COMPONENTS osg osgDB osgGA osgUtil osgViewer)
+find_package(Fontconfig)
 
 find_package(intnavlib REQUIRED)
 

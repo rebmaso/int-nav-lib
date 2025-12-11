@@ -26,6 +26,8 @@
 
 ### Support & Infrastructure
 
+- single app for closed loop / open loop, with yaml opencv parser
+
 - profile code with valgrind
 
 - write unit tests + test bash script

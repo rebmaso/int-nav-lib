@@ -12,7 +12,7 @@
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include "intnavlib.h"
+#include "intnavlib/intnavlib.h"
 
 #define MAX_BUFFER_SIZE_IMU 200
 #define MAX_BUFFER_SIZE_GNSS 50

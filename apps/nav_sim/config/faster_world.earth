@@ -1,0 +1,51 @@
+<!--
+osgEarth Sample - ReadyMap.ORG Server - https://readymap.org
+
+ReadyMap.ORG provides free global base map data for osgEarth developers!
+This tiled, worldwide dataset of imagery, elevation, and street map data
+is a great base map that provides global context for your own local datasets.
+It works "out of the box" with osgEarth applications.
+
+**** NOTICE ****
+YOU ARE RESPONSIBLE for abiding by the TERMS AND CONDITIONS outlined at:
+https://readymap.org
+
+-->
+
+<!-- borrowed some stuff from https://github.com/brejchajan/itr/blob/master/example.earth -->
+<!-- also look here https://github.com/gwaldron/osgearth/blob/fe6ef02beff3999d693ff0656a53703829fdefd4/docs/old_rst/source/references/earthfile.rst#L115 -->
+
+<map name="world">
+
+	<options>
+		<terrain>
+			<skirt_ratio>1</skirt_ratio>
+			<blending>false</blending>
+			<cluster_culling>false</cluster_culling>
+			<!--<color>#ffff00ff</color>-->
+			<!--<driver>rex</driver>-->
+			<elevation_smoothing>false</elevation_smoothing>
+			<first_lod>0</first_lod>
+			<lighting>false</lighting>
+			<max_lod>18</max_lod> <!-- overriddes max_level for each layer>
+			<mercator_fast_path>true</mercator_fast_path>
+			<min_lod>1</min_lod>
+			<min_tile_range_factor>3.0</min_tile_range_factor> <!-- 10 -->
+			<normal_maps>false</normal_maps>
+			<normalize_edges>false</normalize_edges>
+			<!--<tile_size>17</tile_size>-->
+			<!--<range_mode>DISTANCE_FROM_EYE_POINT</range_mode>-->
+		</terrain>
+	</options>
+
+	 <TMSElevation name="ReadyMap 90m Elevation"> <!-- max_level="16"-->
+		 <url>https://readymap.org/readymap/tiles/1.0.0/116/</url>
+		 <vdatum>egm96</vdatum>
+	 </TMSElevation>
+
+	 <ArcGISServerImage name="World Imagery">
+        <url>https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/</url>
+        <nodata_image>https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/100/0/0.jpeg</nodata_image>
+    </ArcGISServerImage>
+
+</map>

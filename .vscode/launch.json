@@ -6,63 +6,13 @@
     "configurations": [
 
         {
-            "name": "(gdb) Launch nav_sim_cl",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/apps/nav_sim_cl/build/nav_sim_cl",
-            "args": ["${workspaceFolder}/apps/nav_sim_cl/scripts/c3105.xml"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/apps/nav_sim_cl/",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "Set Disassembly Flavor to Intel",
-                    "text": "-gdb-set disassembly-flavor intel",
-                    "ignoreFailures": true
-                }
-            ]
-        },
-
-        {
-            "name": "(gdb) Launch nav_sim ins",
+            "name": "(gdb) Launch nav_sim",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/apps/nav_sim/build/nav_sim",
-            "args": ["${workspaceFolder}/data/Profile_3.csv", "ins"],
+            "args": ["${workspaceFolder}/apps/nav_sim/config/closed_loop.json"],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "externalConsole": false,
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                },
-                {
-                    "description": "Set Disassembly Flavor to Intel",
-                    "text": "-gdb-set disassembly-flavor intel",
-                    "ignoreFailures": true
-                }
-            ]
-        },
-
-        {
-            "name": "(gdb) Launch nav_sim tc gnss",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/apps/ins_ecef/build/ins_ecef",
-            "args": ["${workspaceFolder}/data/Profile_3.csv", "gnss_tc"],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}/apps/nav_sim/",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",

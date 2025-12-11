@@ -1,72 +1,108 @@
 cmake_minimum_required(VERSION 3.7)
 
-project(intnavlib VERSION 1.0 DESCRIPTION "integrated navigation c++ library")
+project(
+    intnavlib
+    VERSION 1.0
+    DESCRIPTION "integrated navigation c++ library"
+)
+
+# ===================== Global Settings =====================
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Export compile commands for clang tidy
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(CODE_COVERAGE "Enable coverage reporting" OFF)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-function(enable_coverage target)
-    if(CHECK_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(${target} PRIVATE -O0 -g --coverage)
-        target_link_options(${target} PRIVATE --coverage)
-    endif()
-endfunction()
+option(BUILD_COVERAGE "Enable coverage reporting" OFF)
+option(BUILD_TESTS "Build tests" ON)
+option(BUILD_VISION "Build vision module" ON)
+
+# ===================== Dependencies ========================
 
 find_package(Eigen3 REQUIRED)
 
-# Get all header files in the include directory
-file(GLOB PUBLIC_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h")
-# Get all source files in the src directory
+# ===================== Library Sources =====================
+
 file(GLOB PRIVATE_SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-# Create static library with its sources
 add_library(intnavlib STATIC ${PRIVATE_SOURCE_FILES})
 
-# Add headers. We choose to keep them all public
-target_include_directories(intnavlib
+target_include_directories(
+    intnavlib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include/intnavlib>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
+        $<INSTALL_INTERFACE:include>
 )
 
-# Set properties
-set_target_properties(intnavlib PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
-    POSITION_INDEPENDENT_CODE ON
-    LINKER_LANGUAGE CXX
-    PUBLIC_HEADER "${PUBLIC_HEADERS}"
+set_target_properties(
+    intnavlib
+    PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+        POSITION_INDEPENDENT_CODE ON
+        LINKER_LANGUAGE CXX
 )
 
-# Link dependencies. PRIVATE so only visible from lib
-target_link_libraries( intnavlib
-        PRIVATE
-            Eigen3::Eigen
-        )
+target_link_libraries(intnavlib PUBLIC 
+                                    Eigen3::Eigen
+                                    ${OPENTHREADS_LIBRARY}
+                                )
 
+# ============= Optional Vision Build ==========
 
-# ================= Tests =================
+if(BUILD_VISION)
 
-# https://github.com/google/googletest/tree/main/googletest#incorporating-into-an-existing-cmake-project
+target_compile_definitions(intnavlib PUBLIC BUILD_VISION)
 
 find_package(glog REQUIRED)
+find_package(OpenCV 4 REQUIRED)
+find_package(OsgEarth REQUIRED)
+set(OpenGL_GL_PREFERENCE LEGACY)
+find_package(OpenGL REQUIRED)
+find_package(EGL REQUIRED)
+find_package(OSG REQUIRED COMPONENTS osg osgDB osgGA osgUtil osgViewer)
+find_package(Fontconfig)
 
-option(BUILD_TESTING "Enable testing" ON)
-if(BUILD_TESTING)
+target_link_libraries(intnavlib PUBLIC
+                                    Eigen3::Eigen
+                                    ${OPENTHREADS_LIBRARY}
+                                    glog::glog
+                                    ${OpenCV_LIBS}
+                                    ${EGL_LIBRARY}
+                                    ${OSG_LIBRARY}
+                                    ${OSGVIEWER_LIBRARY}
+                                    ${OSGDB_LIBRARY}
+                                    ${OSGGA_LIBRARY}
+                                    ${OSGUTIL_LIBRARY}
+                                    ${OSGEARTH_LIBRARY}
+                                )
+
+endif()
+
+# ===================== Testing =================
+
+if(BUILD_TESTS)
+
+    # Enable compiler coverage on test targets
+    function(enable_coverage target)
+        if(BUILD_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target} PRIVATE -O0 -g --coverage)
+            target_link_options(${target} PRIVATE --coverage)
+        endif()
+    endfunction()
+
+    find_package(glog REQUIRED)
 
     include(CTest)
     enable_testing()
 
-    # Find GoogleTest or Fetch it
+    # GTest: find or fetch
     find_package(GTest)
-    if (NOT GTest_FOUND)
-        # Fetch GoogleTest
+    if(NOT GTest_FOUND)
         include(FetchContent)
         FetchContent_Declare(
             googletest
@@ -76,46 +112,64 @@ if(BUILD_TESTING)
         FetchContent_MakeAvailable(googletest)
     endif()
 
-    # Get all test sources
+    # Collect test sources
     file(GLOB TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
 
-    # Creeate tests
+    # Create each test
     foreach(test_file ${TEST_SOURCES})
         get_filename_component(test_name ${test_file} NAME_WE)
+
         add_executable(${test_name} ${test_file})
-        target_link_libraries(${test_name}
+
+        target_link_libraries(
+            ${test_name}
             PRIVATE
                 gtest
                 gtest_main
-                ${OPENTHREADS_LIBRARY}
-                Eigen3::Eigen
                 glog::glog
                 intnavlib
         )
+
         add_test(NAME ${test_name} COMMAND ${test_name})
         enable_coverage(${test_name})
     endforeach()
+
 endif()
 
-# ================= Install =================
+# ===================== Install ==============================
 
-# Install instructions
 include(GNUInstallDirs)
-install(TARGETS intnavlib
-    EXPORT intnavlibTargets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/intnavlib)
 
-# Export targets
-install(EXPORT intnavlibTargets
+install(
+    TARGETS intnavlib
+    EXPORT intnavlibTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# Install public headers
+install(DIRECTORY include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/intnavlib
+        FILES_MATCHING PATTERN "*.h")
+
+install(DIRECTORY third_party/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/intnavlib
+        FILES_MATCHING PATTERN "*.h")
+
+# Install the export file
+install(
+    EXPORT intnavlibTargets
     FILE intnavlibTargets.cmake
     NAMESPACE intnavlib::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/intnavlib
 )
 
-# Config files
+# CMake package configuration 
 include(CMakePackageConfigHelpers)
 
+# Write version and config
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/intnavlibConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
@@ -128,8 +182,9 @@ configure_package_config_file(
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/intnavlib
 )
 
-install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/intnavlibConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/intnavlibConfigVersion.cmake"
+install(
+    FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/intnavlibConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/intnavlibConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/intnavlib
 )

@@ -3,6 +3,22 @@
 
 #include <eigen3/Eigen/Dense>
 
+#ifdef BUILD_VISION
+
+#include <osgViewer/Viewer>
+#include <osgViewer/config/SingleWindow>
+#include <osgEarth/ExampleResources>
+#include <osgEarth/MapNode>
+#include "egl_graphics_window_embedded/egl_graphics_window_embedded.h"
+
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+
+using namespace osgEarth;
+using namespace osgEarth::Util;
+
+#endif
+
 #include "constants_types.h"
 #include "helpers.h"
 
@@ -128,9 +144,124 @@ namespace intnavlib {
                                         const GnssConfig& gnss_config,
                                         std::mt19937 & gen);
 
+        
+        #ifdef BUILD_VISION
+
+        /// \brief Simple OSG manipulator
+        class SimpleManipulator : public osgGA::CameraManipulator {
+            public:
+                inline void setByMatrix(const osg::Matrixd& matrix) override {
+                    matrix_ = matrix;
+                }
+
+                inline void setByInverseMatrix(const osg::Matrixd& matrix) override {
+                    osg::Matrixd inv;
+                    inv.invert(matrix);
+                    matrix_ = inv;
+                }
+            
+                inline osg::Matrixd getMatrix() const override {
+                    return matrix_;
+                }
+            
+                inline osg::Matrixd getInverseMatrix() const override {
+                    osg::Matrixd inv;
+                    inv.invert(matrix_);
+                    return inv;
+                }
+            
+            private:
+                osg::Matrixd matrix_;
+        };
+
+        /// \brief An interface to the OSG viewer that allows us to set view matrix, proj matrix, get snapshot. It's threadsafe
+        class ViewerInterface {
+
+        public:
+
+            ViewerInterface() = delete;
+
+            ViewerInterface(const std::string& earth_file_path,
+                            double fx, 
+                            double fy, 
+                            double cx, 
+                            double cy, 
+                            unsigned int width, 
+                            unsigned int height, 
+                            double near, 
+                            double far, 
+                            unsigned int delay_frames,
+                            unsigned int init_delay_frames);
+                            
+            ~ViewerInterface() {
+                viewer->setDone(true);
+                if(renderThread.joinable()) {
+                    renderThread.join();
+                }
+            }
+            
+            // Get a screenshot from the renderer as a cv::Mat
+            cv::Mat getSnapShot();
+            
+            // Set View matrix (camera pose)
+            void setPose(const Eigen::Matrix3d &rotation, const Eigen::Vector3d &translation);
+            
+            // Set projection matrix (camera intrinsics)
+            void setProj(const double & fx, 
+                        const double & fy, 
+                        const double & cx, 
+                        const double & cy, 
+                        const double & w, 
+                        const double & h, 
+                        const double & near, 
+                        const double & far);
+
+            // Start render thread
+            inline void start() {
+                renderThread = std::thread(&ViewerInterface::renderLoop, this);
+            }
+
+            // starts render thread, but first sets view matrix and waits for scene to load
+            void startWithInit(const Eigen::Matrix3d &rotation, 
+                                const Eigen::Vector3d &translation);
+
+        private:
+
+            double fx;
+            double fy;
+            double cx;
+            double cy;
+            unsigned int width;
+            unsigned int height;
+            double near;
+            double far;
+            unsigned int delay_frames;
+            unsigned int init_delay_frames;
+            
+            std::unique_ptr<osg::ArgumentParser> arguments;
+            osg::ref_ptr<osg::GraphicsContext> gc;
+            osg::ref_ptr<osg::GraphicsContext::Traits> traits;
+            osg::ref_ptr<SimpleManipulator> manip;
+            osg::ref_ptr<osgViewer::Viewer> viewer;
+            osg::ref_ptr<osgViewer::SingleWindow> window;
+            osg::ref_ptr<osg::Image> color_image;
+            osg::ref_ptr<osg::Image> depth_image;
+
+            std::thread renderThread;
+
+            // mutex & cv to set up producer-consumer model to get renderer snapshot
+            std::mutex viewer_mutex;
+            std::condition_variable viewer_cv;
+            bool viewer_flag;
+
+            void renderLoop ();
+        };
+
+        #endif
+
     };
     
-    /// @}
+/// @}
 
 // Convenience wrappers
 

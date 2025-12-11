@@ -6,6 +6,19 @@
 #include "constants_types.h"
 #include "helpers.h"
 
+#ifdef BUILD_VISION
+
+#include <glog/logging.h>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/video/tracking.hpp>
+#include <opencv2/features2d.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/core/eigen.hpp>
+
+#endif
+
 namespace intnavlib {
 
 /// \defgroup navigation Navigation
@@ -416,7 +429,7 @@ struct Navigation {
     /// \param[in] tor_s Elapsed time since last update in seconds.
     /// \param[in] p_value P-value threshold for Chi squared consistency check: accept update only if residual in the confidence interval.
     /// \return A StateEstEcefTc structure containing the updated state estimation.
-    static StateEstEcef tcUpdateKFGnssEcef (const GnssMeasurements & gnss_meas, 
+    static StateEstEcef tcUpdateKFGnssEcef(const GnssMeasurements & gnss_meas, 
                                         const StateEstEcef & state_est_prior,
                                         const T & tor_s,
                                         const T & p_value = 0.99);
@@ -429,9 +442,26 @@ struct Navigation {
     /// and its covariance matrix.
     /// \param[in] p_value P-value threshold for Chi squared consistency check: accept update only if residual in the confidence interval.
     /// \return A StateEstEcefLc structure containing the updated state estimation.
-    static StateEstEcef lcUpdateKFPosRotEcef (const PosRotMeasEcef & pos_rot_meas, 
+    static StateEstEcef lcUpdateKFPosRotEcef(const PosRotMeasEcef & pos_rot_meas, 
                                         const StateEstEcef & state_est_old,
                                         const T & p_value = 0.99);
+
+    /// \brief Performs a Loosely Coupled (LC) Kalman filter optical flow update.
+    /// Inspired by https://hilandtom.com/tombotterill/Hide-Botterill-Andreotti-ION10.pdf
+    /// \param[in] img_0 The first image (previous frame).
+    /// \param[in] img_1 The second image (current frame).
+    /// \param[in] K The camera intrinsic matrix.
+    /// \param[in] C_c_b The rotation matrix from body frame to camera frame.
+    /// \param[in] state_est_prior The prior estimated state (navigation solution and biases)
+    /// and its covariance matrix.
+    /// \param[in] p_value P-value threshold for Chi squared consistency check: accept update only if residual in the confidence interval.
+    /// \return A StateEstEcefLc structure containing the updated state estimation.
+    static StateEstEcef lcUpdateKFOptFlow(const cv::Mat & img_0,
+                                    const cv::Mat & img_1,
+                                    const Matrix3 & K,
+                                    const Matrix3 & C_c_b,
+                                    const StateEstEcef & state_est_prior,
+                                    const T & p_value = 0.99);
 
     /// \brief Calculates position, velocity, clock offset, and clock drift rate using unweighted iterated least squares.
     /// \param[in] gnss_meas Structure containing GNSS pseudo-range and pseudo-range rate measurements,
@@ -500,6 +530,20 @@ struct Navigation {
             inline void lcUpdateGnssEcef(const GnssMeasurements & gnss_meas, const GnssConfig & gnss_config) { state_est_ = lcUpdateKFGnssEcef(gnss_meas, state_est_, gnss_config);}
             /// \brief Update with GNSS (tight).
             inline void tcUpdateGnssEcef(const GnssMeasurements & gnss_meas, const T & tor_s) { state_est_ = tcUpdateKFGnssEcef(gnss_meas, state_est_, tor_s);}
+            
+            #ifdef BUILD_VISION
+            /// \brief Update with optical flow
+            inline void lcUpdateOptFlow(const cv::Mat & img_0,
+                                    const cv::Mat & img_1,
+                                    const Matrix3 & K,
+                                    const Matrix3 & C_c_b) { 
+                                        
+                                        state_est_ = lcUpdateKFOptFlow(img_0,
+                                                                    img_1,
+                                                                    K,
+                                                                    C_c_b,
+                                                                    state_est_);}
+            #endif
     };
 };
 

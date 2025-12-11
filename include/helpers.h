@@ -164,6 +164,7 @@ namespace intnavlib {
         // Column 10: yaw angle of body w.r.t NED (deg)
         class MotionProfileReader {
             public:
+                MotionProfileReader() = default;
                 MotionProfileReader(const std::string& filename) : file(filename), ok(false) {
                     if (!file.is_open()) {
                         std::cerr << "Failed to open file: " << filename << std::endl;
