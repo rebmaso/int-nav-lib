@@ -20,17 +20,13 @@
 
 - no dynamic memory allocation
 
-- Joseph update
-
 - templating: add double and float aliases, rewrite apps to use those. no weird compile time type
 
-### Support & Infrastructure
+### Infrastructure
 
-- single app for closed loop / open loop, with yaml opencv parser
+- one file per function, to separate build units and speed up build
 
-- profile code with valgrind
-
-- write unit tests + test bash script
+- write more unit tests + test bash script
 
 - Remove dependencies: place eigen in include dir as submodule
 
@@ -45,6 +41,12 @@
 - improve readme, add images & gifs, better plots
 
 # DONE
+
+- Joseph update
+
+- single app for closed loop / open loop, with yaml opencv parser
+
+- profile code with valgrind
 
 - generic core templated kalman update func
 

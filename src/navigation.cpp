@@ -38,7 +38,11 @@ bool Navigation<T>::updateKF(const Eigen::Matrix<T, n_z, 1, 0, max_n_z, 1> & del
     x_est_new = /*x_est_propagated + */ K_matrix * delta_z;
 
     // Update state estimation error covariance matrix using (3.25)
-    P_matrix_post = (Eigen::Matrix<T, n_x, n_x>::Identity() - K_matrix * H_matrix) * P_matrix;
+    // P_matrix_post = (Eigen::Matrix<T, n_x, n_x>::Identity() - K_matrix * H_matrix) * P_matrix;
+
+    // Joseph form: so we ensure positive definiteness of P
+    Eigen::Matrix<T, n_x, n_x> P_matrix_post_fac_1 = (Eigen::Matrix<T, n_x, n_x>::Identity() - K_matrix * H_matrix);
+    P_matrix_post = P_matrix_post_fac_1 * P_matrix * P_matrix_post_fac_1.transpose() + K_matrix * R_matrix * K_matrix.transpose();
 
     // Real-time consistency check
     // See: Estimation with Applications to Tracking and Navigation -- Yaakov Bar-Shalom et al. p.237
