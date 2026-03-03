@@ -10,7 +10,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/apps/nav_sim/build/nav_sim",
-            "args": ["${workspaceFolder}/apps/nav_sim/config/closed_loop.json"],
+            "args": ["${workspaceFolder}/apps/nav_sim/config/open_loop.json"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/apps/nav_sim/",
             "environment": [],

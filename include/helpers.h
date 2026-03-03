@@ -11,6 +11,12 @@
 
 #include "constants_types.h"
 
+#ifdef BUILD_VISION
+
+#include <opencv2/core.hpp>
+
+#endif
+
 namespace intnavlib {
 
     /// \defgroup Helpers
@@ -144,6 +150,27 @@ namespace intnavlib {
         /// \return The 3D vector from which the skew-symmetric matrix was formed.
         static Vector3 deSkew(const Matrix3 & S);
         
+
+#ifdef BUILD_VISION
+        /// \brief Extracts a reference image from a GDAL dataset using camera FOV.
+        /// \param[in] nav_sol The navigation solution in ECEF frame.
+        /// \param[in] fx Camera focal length in x.
+        /// \param[in] fy Camera focal length in y.
+        /// \param[in] cx Camera principal point in x.
+        /// \param[in] cy Camera principal point in y.
+        /// \param[in] width Width of the camera image in pixels.
+        /// \param[in] height Height of the camera image in pixels.
+        /// \param[in] C_b_c Rotation matrix from body to camera frame.
+        /// \param[in] dataset_path Path to the GDAL-compatible dataset.
+        /// \return The extracted reference image as a cv::Mat.
+        static cv::Mat getGdalReferenceImage(const NavSolutionEcef& nav_sol,
+                                             T fx, T fy, T cx, T cy,
+                                             unsigned int width, unsigned int height,
+                                             const Matrix3& C_b_c,
+                                             const std::string& dataset_path,
+                                             const std::string& dem_dataset_path);
+#endif
+
         /// \brief Get IMU errors for a tactical grade IMU.
         static ImuErrors tacticalImuErrors();
         /// \brief Get default GNSS config.
@@ -412,6 +439,8 @@ namespace intnavlib {
     inline Eigen::Matrix<float,3,1> deSkew(const Eigen::Matrix<float,3,3> & S) {
         return Helpersf::deSkew(S);
     }
+
+
 
     extern template struct Helpers<float>;
     extern template struct Helpers<double>;

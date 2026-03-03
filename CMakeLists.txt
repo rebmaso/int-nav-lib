@@ -66,6 +66,7 @@ find_package(OpenGL REQUIRED)
 find_package(EGL REQUIRED)
 find_package(OSG REQUIRED COMPONENTS osg osgDB osgGA osgUtil osgViewer)
 find_package(Fontconfig)
+find_package(GDAL REQUIRED)
 
 target_link_libraries(intnavlib PUBLIC
                                     Eigen3::Eigen
@@ -79,7 +80,10 @@ target_link_libraries(intnavlib PUBLIC
                                     ${OSGGA_LIBRARY}
                                     ${OSGUTIL_LIBRARY}
                                     ${OSGEARTH_LIBRARY}
+                                    ${GDAL_LIBRARIES}
                                 )
+
+target_include_directories(intnavlib PUBLIC ${GDAL_INCLUDE_DIRS})
 
 endif()
 

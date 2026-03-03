@@ -3,7 +3,9 @@
     "sim_type": "ins_gnss_tc",
     "fdm_end_time": 3600,
     "fdm_script_path": "scripts/c3105.xml",
-    "motion_profile_path": "motion_profiles/Profile_5.csv",
+    "motion_profile_path": "/home/tommaso/Workspace/int-nav-lib-sim/traj_generator/demo_saved_data/2026-03-02-22-14-19/Profile_motion_def-Zurich_straight.csv",
+    "ortho_dataset_path": "/home/tommaso/Datasets/swisstopo/ch.swisstopo.swissimage-dop10-wADEOh8l/dataset_warped.vrt",
+    "dem_dataset_path": "/home/tommaso/Datasets/swisstopo/ch.swisstopo.swisssurface3d-raster-2Lm0DifH/dataset.vrt",
     "epoch_interval": 0.5,
-    "viz": true
+    "viz": false
 }

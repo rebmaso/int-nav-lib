@@ -1,5 +1,19 @@
 #include "helpers.h"
 
+#ifdef BUILD_VISION
+
+#include <mutex>
+#include <opencv2/calib3d.hpp>
+#include <gdal_priv.h>
+#include <cpl_conv.h>
+#include <ogr_spatialref.h>
+#include <ogrsf_frmts.h>
+
+#include <opencv2/imgproc.hpp>
+#include <opencv2/highgui.hpp>
+#endif
+
+
 namespace intnavlib {
 
 template <typename T>
@@ -328,6 +342,166 @@ Helpers<T>::tacticalImuKFConfig(){
     kf_config.clock_phase_psd = 1;
     return kf_config;
 }
+
+#ifdef BUILD_VISION
+template <typename T>
+cv::Mat Helpers<T>::getGdalReferenceImage(const typename Types<T>::NavSolutionEcef& nav_sol,
+                                          T fx, T fy, T cx, T cy,
+                                          unsigned int width, unsigned int height,
+                                          const typename Helpers<T>::Matrix3& C_b_c,
+                                          const std::string& dataset_path,
+                                          const std::string& dem_dataset_path) {
+    
+    // 1. GDAL setup
+    static std::once_flag gdal_initialized;
+    std::call_once(gdal_initialized, [](){ GDALAllRegister(); });
+
+    // 2. Get camera pose in NED
+    NavSolutionNed nav_sol_ned = ecefToNed(nav_sol);
+    Matrix3 C_c_n = nav_sol_ned.C_b_n * C_b_c;
+
+    // 3. Get ground height from DEM
+    double ground_height = 0.0;
+    GDALDataset* dem_dataset = (GDALDataset*) GDALOpen(dem_dataset_path.c_str(), GA_ReadOnly);
+    if (dem_dataset) {
+        OGRSpatialReference oSRS, iSRS;
+        const char* wkt_projection = dem_dataset->GetProjectionRef();
+        oSRS.importFromWkt(wkt_projection);
+        iSRS.SetWellKnownGeogCS("WGS84");
+        iSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+        oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+        OGRCoordinateTransformation *poCT = OGRCreateCoordinateTransformation(&iSRS, &oSRS);
+        if (poCT) {
+            double x = nav_sol_ned.longitude * kRadToDeg;
+            double y = nav_sol_ned.latitude * kRadToDeg;
+            if(poCT->Transform(1, &x, &y)) {
+                double adfGeoTransform[6];
+                dem_dataset->GetGeoTransform(adfGeoTransform);
+                double invGeoTransform[6];
+                if (GDALInvGeoTransform(adfGeoTransform, invGeoTransform)) {
+                    double pixel, line;
+                    GDALApplyGeoTransform(invGeoTransform, x, y, &pixel, &line);
+                    int px = static_cast<int>(std::floor(pixel));
+                    int py = static_cast<int>(std::floor(line));
+                    
+                    if (px >= 0 && px < dem_dataset->GetRasterXSize() && py >= 0 && py < dem_dataset->GetRasterYSize()) {
+                        float val;
+                        if(dem_dataset->GetRasterBand(1)->RasterIO(GF_Read, px, py, 1, 1, &val, 1, 1, GDT_Float32, 0, 0) == CE_None) {
+                            ground_height = static_cast<double>(val);
+                        }
+                    }
+                }
+            }
+            OCTDestroyCoordinateTransformation(poCT);
+        }
+        GDALClose(dem_dataset);
+    } else {
+        std::cerr << "Failed to open DEM dataset: " << dem_dataset_path << std::endl;
+    }
+
+    GDALDataset* dataset = (GDALDataset*) GDALOpen(dataset_path.c_str(), GA_ReadOnly);
+    if (!dataset) {
+        std::cerr << "Failed to open GDAL dataset: " << dataset_path << std::endl;
+        return cv::Mat();
+    }
+
+    // 4. Define FOV corner rays in camera frame
+    std::vector<Vector3> corner_rays_c;
+    corner_rays_c.push_back(Vector3((0 - cx) / fx, (0 - cy) / fy, 1.0).normalized());
+    corner_rays_c.push_back(Vector3((width - cx) / fx, (0 - cy) / fy, 1.0).normalized());
+    corner_rays_c.push_back(Vector3((width - cx) / fx, (height - cy) / fy, 1.0).normalized());
+    corner_rays_c.push_back(Vector3((0 - cx) / fx, (height - cy) / fy, 1.0).normalized());
+
+    // 5. Intersect rays with ground plane in NED
+    std::vector<cv::Point2d> ground_corners_lon_lat;
+    Vector2 radii = radiiOfCurvature(nav_sol_ned.latitude);
+    T R_N = radii(0);
+    T R_E = radii(1);
+
+    for (const auto& ray_c : corner_rays_c) {
+        Vector3 ray_n = C_c_n * ray_c;
+        if (ray_n(2) <= 0) { // Ray is not pointing down
+            GDALClose(dataset);
+            // std::cerr << "Camera is not pointing towards the ground." << std::endl;
+            return cv::Mat();
+        }
+        T t = (nav_sol_ned.height - ground_height) / ray_n(2);
+        Vector3 p_intersect_n = t * ray_n;
+
+        // 6. Convert intersection points to Lat/Lon
+        T corner_lat = nav_sol_ned.latitude + p_intersect_n(0) / (R_N + nav_sol_ned.height);
+        T corner_lon = nav_sol_ned.longitude + p_intersect_n(1) / ((R_E + nav_sol_ned.height) * cos(nav_sol_ned.latitude));
+        ground_corners_lon_lat.push_back(cv::Point2d(corner_lon * kRadToDeg, corner_lat * kRadToDeg));
+    }
+
+    // 7. Transform corner coordinates to dataset's pixel coordinates
+    OGRSpatialReference oSRS, iSRS;
+    const char* wkt_projection = dataset->GetProjectionRef();
+    oSRS.importFromWkt(wkt_projection);
+    iSRS.SetWellKnownGeogCS("WGS84");
+    iSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+    oSRS.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+    OGRCoordinateTransformation *poCT = OGRCreateCoordinateTransformation(&iSRS, &oSRS);
+    if (!poCT) {
+        GDALClose(dataset);
+        std::cerr << "Failed to create coordinate transformation." << std::endl;
+        return cv::Mat();
+    }
+
+    double adfGeoTransform[6];
+    dataset->GetGeoTransform(adfGeoTransform);
+    double invGeoTransform[6];
+    if (GDALInvGeoTransform(adfGeoTransform, invGeoTransform) == 0) {
+        GDALClose(dataset);
+        OCTDestroyCoordinateTransformation(poCT);
+        std::cerr << "Failed to compute inverse geotransform." << std::endl;
+        return cv::Mat();
+    }
+
+    std::vector<cv::Point2f> src_pts;
+    double min_x = std::numeric_limits<double>::max(), max_x = std::numeric_limits<double>::min();
+    double min_y = std::numeric_limits<double>::max(), max_y = std::numeric_limits<double>::min();
+
+    for (const auto& pt_lon_lat : ground_corners_lon_lat) {
+        double x = pt_lon_lat.x;
+        double y = pt_lon_lat.y;
+        poCT->Transform(1, &x, &y);
+
+        double pixel, line;
+        GDALApplyGeoTransform(invGeoTransform, x, y, &pixel, &line);
+        src_pts.push_back(cv::Point2f(pixel, line));
+
+        min_x = std::min(min_x, pixel);
+        max_x = std::max(max_x, pixel);
+        min_y = std::min(min_y, line);
+        max_y = std::max(max_y, line);
+    }
+    OCTDestroyCoordinateTransformation(poCT);
+
+    // 8. Read data from dataset (Crop)
+    int xoff = std::max(0, (int)floor(min_x));
+    int yoff = std::max(0, (int)floor(min_y));
+    int req_width = (int)ceil(max_x) - xoff;
+    int req_height = (int)ceil(max_y) - yoff;
+
+    if (xoff + req_width > dataset->GetRasterXSize()) req_width = dataset->GetRasterXSize() - xoff;
+    if (yoff + req_height > dataset->GetRasterYSize()) req_height = dataset->GetRasterYSize() - yoff;
+
+    if (req_width <= 0 || req_height <= 0) {
+        GDALClose(dataset);
+        return cv::Mat();
+    }
+
+    cv::Mat gdal_chip(req_height, req_width, CV_8UC1);
+    CPLErr err = dataset->GetRasterBand(1)->RasterIO(GF_Read, xoff, yoff, req_width, req_height, gdal_chip.data, req_width, req_height, GDT_Byte, 0, 0);
+    GDALClose(dataset);
+    if (err != CE_None) { std::cerr << "RasterIO failed." << std::endl; return cv::Mat(); }
+
+    return gdal_chip;
+}
+#endif
 
 template struct Helpers<float>;
 template struct Helpers<double>;

@@ -119,6 +119,8 @@ int main(int argc, char* argv[]) {
     std::string motion_profile_path = fs["motion_profile_path"];
     ScalarType epoch_interval = fs["epoch_interval"];
     bool viz = bool(int(fs["viz"]));
+    std::string ortho_dataset_path = fs["ortho_dataset_path"];
+    std::string dem_dataset_path = fs["dem_dataset_path"];
 
     // Print config
     LOG(INFO) << "Simulation type: " << sim_type_str;
@@ -126,6 +128,8 @@ int main(int argc, char* argv[]) {
     LOG(INFO) << "FDM script path: " << fdm_script_path;
     LOG(INFO) << "FDM end time: " << fdm_end_time;
     LOG(INFO) << "Motion profile path: " << motion_profile_path;
+    LOG(INFO) << "Orthoimagery dataset path: " << ortho_dataset_path;
+    LOG(INFO) << "DEM dataset path: " << dem_dataset_path;
 
     // ==============================================
 
@@ -307,6 +311,19 @@ int main(int argc, char* argv[]) {
                 cv::imshow("Synthetic Camera Image", img);
                 cv::waitKey(1);
             }
+
+            cv::Mat gdal_img = Helpers<double>::getGdalReferenceImage(true_nav_ecef,
+                            K(0,0), K(1,1), K(0,2), K(1,2),
+                            400, 400,
+                            C_b_c,
+                            ortho_dataset_path,
+                            dem_dataset_path);
+            if(!gdal_img.empty()) {
+            cv::Mat resized_gdal_img;
+            cv::resize(gdal_img, resized_gdal_img, cv::Size(), 0.25, 0.25);
+            cv::imshow("GDAL Reference Image", resized_gdal_img);
+            cv::waitKey();
+            }            
             
             // Loose GNSS Update
             if(sim_type == SimType::INS_GNSS_LC) {

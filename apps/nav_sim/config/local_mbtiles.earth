@@ -1,0 +1,59 @@
+<!--
+osgEarth Sample - ReadyMap.ORG Server - https://readymap.org
+
+ReadyMap.ORG provides free global base map data for osgEarth developers!
+This tiled, worldwide dataset of imagery, elevation, and street map data
+is a great base map that provides global context for your own local datasets.
+It works "out of the box" with osgEarth applications.
+
+**** NOTICE ****
+YOU ARE RESPONSIBLE for abiding by the TERMS AND CONDITIONS outlined at:
+https://readymap.org
+
+-->
+
+<!-- borrowed some stuff from https://github.com/brejchajan/itr/blob/master/example.earth -->
+<!-- also look here https://github.com/gwaldron/osgearth/blob/fe6ef02beff3999d693ff0656a53703829fdefd4/docs/old_rst/source/references/earthfile.rst#L115 -->
+
+<map name="world">
+
+	<options>
+		<terrain>
+			<skirt_ratio>0</skirt_ratio>
+			<blending>false</blending>
+			<cluster_culling>false</cluster_culling>
+			<elevation_smoothing>false</elevation_smoothing>
+			<first_lod>0</first_lod>
+			<lighting>false</lighting>
+			<mercator_fast_path>true</mercator_fast_path>
+			<min_tile_range_factor>6.0</min_tile_range_factor>
+			<normal_maps>false</normal_maps>
+			<normalize_edges>false</normalize_edges>
+			<tile_size>9</tile_size>
+		</terrain>
+
+	</options>
+	
+	<MBTilesElevation name="Local Elevation">
+        <url>/home/tommaso/Datasets/swisstopo/ch.swisstopo.swisssurface3d-raster-2Lm0DifH/dataset_lowres.mbtiles</url>
+        <vdatum>egm96</vdatum>
+        <max_level>4</max_level>
+    	</MBTilesElevation>
+    
+    <MBTilesImage name="Local Image">
+        <url>/home/tommaso/Datasets/swisstopo/ch.swisstopo.swissimage-dop10-wADEOh8l/dataset.mbtiles</url>
+        <max_level>18</max_level>
+    </MBTilesImage>
+
+	<Viewpoints>
+        <Viewpoint name="Zurich, Switzerland">
+			<heading>10</heading>
+            <height>500.0</height>
+            <lat>47.37867207992077</lat>
+            <long>8.526011328616088</long>
+            <pitch>-34</pitch>
+            <range>500</range>
+        </Viewpoint>
+    </Viewpoints>
+
+</map>
