@@ -20,7 +20,7 @@
 
 - no dynamic memory allocation
 
-- templating: add double and float aliases, rewrite apps to use those. no weird compile time type
+- guidance folder: prop nav, correlation.
 
 ### Infrastructure
 

@@ -26,7 +26,10 @@ find_package(Eigen3 REQUIRED)
 
 # ===================== Library Sources =====================
 
-file(GLOB PRIVATE_SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+file(GLOB PRIVATE_SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" 
+                                "${CMAKE_CURRENT_SOURCE_DIR}/src/*/*.cpp")
+
+MESSAGE(WARNING ${PRIVATE_SOURCE_FILES})
 
 add_library(intnavlib STATIC ${PRIVATE_SOURCE_FILES})
 
